@@ -1,14 +1,5 @@
----
-title: 'Project documentation template'
-disqus: hackmd
----
-
 GPU Fractal Image Compression
 ===
-
-## Table of Contents
-
-[TOC]
 
 ## Program
 #### Encode512
