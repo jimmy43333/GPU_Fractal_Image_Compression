@@ -17,7 +17,7 @@ using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512Classify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvcc FE512CShared.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
 //    nvprof ./FE512 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
@@ -71,7 +71,7 @@ bool InitCUDA()
     return true;
 }
 
-__device__ void permutation(cuda::PtrStep<uchar> input,int inputSize,int *a,int x,int y,int R,int k){
+__device__ void permutation(int* input,int inputSize,int *a,int x,int y,int R,int k){
     //x,y is the position in the Mat h.
     //R is the size of array a.
     if(x+R <= inputSize && y+R <= inputSize){
@@ -79,7 +79,7 @@ __device__ void permutation(cuda::PtrStep<uchar> input,int inputSize,int *a,int 
         int h[Rb*Rb];
         for (i1=0; i1<R; i1++){
             for (j1=0; j1<R; j1++){
-                *(h+i1*R+j1) = input(x+i1,y+j1);
+                *(h+i1*R+j1) = *(input+(x+i1)*inputSize+y+j1);
             }
         }
         switch(k){
@@ -131,7 +131,7 @@ __device__ void permutation(cuda::PtrStep<uchar> input,int inputSize,int *a,int 
     }
 }
 
-__device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int y){
+__device__ int Classify(int* inputBlock,int imageSize,int x,int y){
     const int BlockSize = Rb;
     int permu[BlockSize][BlockSize];
     int a1,a2,a3,a4; //Four subblock of the classify block
@@ -139,7 +139,7 @@ __device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int 
     int kout;
     //Permutation
     for(k=0;k<8;k++){
-        permutation(inputImage,imageSize,&permu[0][0],x,y,BlockSize,k);
+        permutation(inputBlock,imageSize,&permu[0][0],x,y,BlockSize,k);
         //Calculate a1,a2,a3,a4
         a1=0;
         a2=0;
@@ -174,9 +174,22 @@ __device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int 
 
 __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> Result){
     int x= blockIdx.x;
-    int y= threadIdx.x; 
+    int y= threadIdx.x;
+    __shared__ int tmpDown[Rb][N2];
+    if(y<Dnum){
+        for(int i=0;i<Rb;i++){
+            tmpDown[i][y] = downImage(x+i,y);
+        }
+    }else{
+        for(int i=0;i<Rb;i++){
+            for(int j=0;j<Rb;j++){
+                tmpDown[i][y+j] = downImage(x+i,y+j);
+            }
+        }
+    }
+    __syncthreads();
     if(x<Dnum && y<Dnum){
-        Result(x,y) = Classify(downImage,N2,x,y);
+        Result(x,y) = Classify(&tmpDown[0][0],N2,0,y);
     }
 }
 
@@ -286,9 +299,12 @@ __device__ float calK(int Rk,int Dk){
     }
 }
 
-__global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downimage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
+__global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
     //int i,j,m;
     __shared__ float tmpOutput[5][Dnum];
+    __shared__ int tmpDown[Rb][N2];
+    int i,j;
+    int imgR[Rb][Rb];
     int tmpR[Rb][Rb];
     int tmpD[Rb][Rb];
     float s,m,err;
@@ -301,14 +317,34 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     int offset=1;
     int x = blockIdx.x;
     int y = threadIdx.x;
+    //Set shared mem
+    if(y<Dnum){
+        for(i=0;i<Rb;i++){
+            tmpDown[i][y] = downImage(x+i,y);
+        }
+    }else{
+        for(i=0;i<Rb;i++){
+            for(j=0;j<Rb;j++){
+                tmpDown[i][y+j] = downImage(x+i,y+j);
+            }
+        }
+    }
+    __syncthreads();
+    //Set Range block
+    for(i=0;i<Rb;i++){
+        for(j=0;j<Rb;j++){
+            imgR[i][j] = image(Rx+i,Ry+j);
+        }
+    }
     Dclass = klass(x,y)/10;
-    Rclass = Classify(image,N,Rx,Ry);
+    Rclass = Classify(&imgR[0][0],Rb,0,0);
     Dk = klass(x,y)%10;
     tmpOutput[4][y] = 6553500;
+    
     if(Dclass == Rclass/10){
         Rk = Rclass%10;
-        permutation(image,N,&tmpR[0][0],Rx,Ry,Rb,Rk);
-        permutation(downimage,N2,&tmpD[0][0],x,y,Rb,Dk);
+        permutation(&imgR[0][0],Rb,&tmpR[0][0],0,0,Rb,Rk);
+        permutation(&tmpDown[0][0],N2,&tmpD[0][0],0,y,Rb,Dk);
         calSM(&tmpR[0][0],&tmpD[0][0],ds,dm,derr);
         tmpOutput[0][y] = y;
         tmpOutput[1][y] = calK(Rk,Dk);

@@ -19,7 +19,7 @@ using namespace std;
 
 //Run on terminal:
 //  nvcc FE512Baseline.cu -o FE512 `pkg-config --cflags --libs opencv`
-//  nvprof ./FE512 ../Dataset/lennaGray512.tif
+//  nvprof ./FE512 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
