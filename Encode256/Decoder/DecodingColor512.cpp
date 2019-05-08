@@ -17,7 +17,7 @@ using namespace cv;
 using namespace std;
 
 //g++ DecodingColor512.cpp -o FDRGB512 `pkg-config --cflags --libs opencv`
-//./FDRGB512 512RGBOutcode
+//./FDRGB512 ../512Outcode
 
 typedef struct code{
     int x;

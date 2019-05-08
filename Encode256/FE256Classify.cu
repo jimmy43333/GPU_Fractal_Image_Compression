@@ -7,18 +7,18 @@
 #include <opencv2/core/cuda.hpp>
 #include <vector>
 
-#define  N      512
-#define  N2     256
+#define  N      256
+#define  N2     128
 #define  Db      16
 #define  Rb       8
-#define  Dnum   248  //N2-Rb
+#define  Dnum   120  //N2-Rb
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512CShared.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/LennaGray512.tif
+//    nvcc FE256Classify.cu -o FE256 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE256 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -71,67 +71,59 @@ bool InitCUDA()
     return true;
 }
 
-__device__ void permutation(int* input,int inputSize,int *a,int x,int y,int R,int k){
+__device__ void permutation(const int *h,int *a,int H,int R,int k){
     //x,y is the position in the Mat h.
     //R is the size of array a.
-    if(x+R <= inputSize && y+R <= inputSize){
-        int i1,j1;
-        int h[Rb*Rb];
-        for (i1=0; i1<R; i1++){
-            for (j1=0; j1<R; j1++){
-                *(h+i1*R+j1) = *(input+(x+i1)*inputSize+y+j1);
-            }
-        }
-        switch(k){
-               case 0: 
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1) = *(h+i1*R+j1);
-                 break;
-               case 1:
-                 for (i1=0; i1<R; i1++)
-                  for (j1=0; j1<R; j1++)
-                   *(a+i1*R+j1)= *(h+(R-1-j1)*R+i1);
-                break;
-             case 2:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+R-1-j1);
-                 break;
-            case 3:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                    *(a+i1*R+j1)= *(h+j1*R+R-1-i1);
-                 break;
-                                     /* Reflect w.r.t. y-axis,  then rotate 
-                                        counterclockwise 90, 180, 270 degree(s)
-                                     */
-            case 4:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+i1*R+R-1-j1);
-                 break;
-            case 5:
-                  for (i1=0; i1<R; i1++)
-                    for (j1=0; j1<R; j1++)
-                      *(a+i1*R+j1)= *(h+(R-1-j1)*R+R-1-i1);
-                 break;
-            case 6:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+j1);
-                 break;
-            case 7:
+    int i1,j1;
+    switch(k){
+           case 0: 
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1) = *(h+i1*H+j1);
+             break;
+           case 1:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-j1)*H+i1);
+             break;
+           case 2:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*H+R-1-j1);
+             break;
+           case 3:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+j1*H+R-1-i1);
+             break;
+                                 /* Reflect w.r.t. y-axis,  then rotate 
+                                    counterclockwise 90, 180, 270 degree(s)
+                                 */
+           case 4:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+i1*H+R-1-j1);
+             break;
+           case 5:
               for (i1=0; i1<R; i1++)
                 for (j1=0; j1<R; j1++)
-                  *(a+i1*R+j1)= *(h+j1*R+i1);
+                  *(a+i1*R+j1)= *(h+(R-1-j1)*H+R-1-i1);
+              break;
+           case 6:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*H+j1);
+             break;
+           case 7:
+              for (i1=0; i1<R; i1++)
+                for (j1=0; j1<R; j1++)
+                  *(a+i1*R+j1)= *(h+(j1)*H+i1);
               break;
 
-        } /* end switch */
-    }
+           } /* end switch */
 }
 
-__device__ int Classify(int* inputBlock,int imageSize,int x,int y){
+__device__ int Classify(int* inputBlock,int inputSize){
     const int BlockSize = Rb;
     int permu[BlockSize][BlockSize];
     int a1,a2,a3,a4; //Four subblock of the classify block
@@ -139,7 +131,7 @@ __device__ int Classify(int* inputBlock,int imageSize,int x,int y){
     int kout;
     //Permutation
     for(k=0;k<8;k++){
-        permutation(inputBlock,imageSize,&permu[0][0],x,y,BlockSize,k);
+        permutation(inputBlock,&permu[0][0],inputSize,BlockSize,k);
         //Calculate a1,a2,a3,a4
         a1=0;
         a2=0;
@@ -189,7 +181,7 @@ __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep
     }
     __syncthreads();
     if(x<Dnum && y<Dnum){
-        Result(x,y) = Classify(&tmpDown[0][0],N2,0,y);
+        Result(x,y) = Classify(&tmpDown[0][y],N2);
     }
 }
 
@@ -300,13 +292,13 @@ __device__ float calK(int Rk,int Dk){
 }
 
 __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
-    //int i,j,m;
     __shared__ float tmpOutput[5][Dnum];
     __shared__ int tmpDown[Rb][N2];
     int i,j;
-    int imgR[Rb][Rb];
     int tmpR[Rb][Rb];
-    int tmpD[Rb][Rb];
+    int perR[Rb][Rb];
+    //int tmpD[Rb][Rb];
+    int perD[Rb][Rb];
     float s,m,err;
     float* ds = &s;
     float* dm = &m;
@@ -333,19 +325,19 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     //Set Range block
     for(i=0;i<Rb;i++){
         for(j=0;j<Rb;j++){
-            imgR[i][j] = image(Rx+i,Ry+j);
+            tmpR[i][j] = image(Rx+i,Ry+j);
         }
     }
     Dclass = klass(x,y)/10;
-    Rclass = Classify(&imgR[0][0],Rb,0,0);
+    Rclass = Classify(&tmpR[0][0],Rb);
     Dk = klass(x,y)%10;
     tmpOutput[4][y] = 6553500;
     
     if(Dclass == Rclass/10){
         Rk = Rclass%10;
-        permutation(&imgR[0][0],Rb,&tmpR[0][0],0,0,Rb,Rk);
-        permutation(&tmpDown[0][0],N2,&tmpD[0][0],0,y,Rb,Dk);
-        calSM(&tmpR[0][0],&tmpD[0][0],ds,dm,derr);
+        permutation(&tmpR[0][0],&perR[0][0],Rb,Rb,Rk);
+        permutation(&tmpDown[0][y],&perD[0][0],N2,Rb,Dk);
+        calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
         tmpOutput[0][y] = y;
         tmpOutput[1][y] = calK(Rk,Dk);
         tmpOutput[2][y] = *ds;
@@ -401,7 +393,7 @@ int main(int argc, char** argv){
     resize(image,downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     //Open the file for store encoding data
     fstream outfile;
-    outfile.open("512Outcode",ios::out);
+    outfile.open("256Outcode",ios::out);
     if(!outfile){
         cout << "Open out file fail!!" << endl;
         return 0;

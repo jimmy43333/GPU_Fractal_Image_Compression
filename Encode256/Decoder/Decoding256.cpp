@@ -5,19 +5,19 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#define  N   1024
-#define  N2   512
-#define  Db    32
-#define  Rb    16
-#define  Dnum 496 
+#define  N    256
+#define  N2   128
+#define  Db    16
+#define  Rb     8
+#define  Dnum 120 
 #define  nRun  10
 
 
 using namespace cv;
 using namespace std;
 
-// g++ Decoding1024.cpp -o FD1024 `pkg-config --cflags --libs opencv`
-// ./FD1024 1024Outcode 
+// g++ Decoding256.cpp -o FD256 `pkg-config --cflags --libs opencv`
+// ./FD256 256Outcode 
 
 typedef struct code{
     int x;

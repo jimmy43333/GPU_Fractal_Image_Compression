@@ -11,14 +11,14 @@
 #define  N2     512
 #define  Db      16
 #define  Rb       8
-#define  Dnum   256  //N2-Rb
+#define  Dnum   504  //N2-Rb
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE1024Classify.cu -o FE1024 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE1024 ../Dataset/FallColor1024.jpg
+//    nvcc FE512Classify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE512 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -71,67 +71,59 @@ bool InitCUDA()
     return true;
 }
 
-__device__ void permutation(cuda::PtrStep<uchar> input,int inputSize,int *a,int x,int y,int R,int k){
+__device__ void permutation(const int *h,int *a,int H,int R,int k){
     //x,y is the position in the Mat h.
     //R is the size of array a.
-    if(x+R <= inputSize && y+R <= inputSize){
-        int i1,j1;
-        int h[Rb*Rb];
-        for (i1=0; i1<R; i1++){
-            for (j1=0; j1<R; j1++){
-                *(h+i1*R+j1) = input(x+i1,y+j1);
-            }
-        }
-        switch(k){
-               case 0: 
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1) = *(h+i1*R+j1);
-                 break;
-               case 1:
-                 for (i1=0; i1<R; i1++)
-                  for (j1=0; j1<R; j1++)
-                   *(a+i1*R+j1)= *(h+(R-1-j1)*R+i1);
-                break;
-             case 2:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+R-1-j1);
-                 break;
-            case 3:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                    *(a+i1*R+j1)= *(h+j1*R+R-1-i1);
-                 break;
-                                     /* Reflect w.r.t. y-axis,  then rotate 
-                                        counterclockwise 90, 180, 270 degree(s)
-                                     */
-            case 4:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+i1*R+R-1-j1);
-                 break;
-            case 5:
-                  for (i1=0; i1<R; i1++)
-                    for (j1=0; j1<R; j1++)
-                      *(a+i1*R+j1)= *(h+(R-1-j1)*R+R-1-i1);
-                 break;
-            case 6:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+j1);
-                 break;
-            case 7:
+    int i1,j1;
+    switch(k){
+           case 0: 
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1) = *(h+i1*H+j1);
+             break;
+           case 1:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-j1)*H+i1);
+             break;
+           case 2:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*H+R-1-j1);
+             break;
+           case 3:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+j1*H+R-1-i1);
+             break;
+                                 /* Reflect w.r.t. y-axis,  then rotate 
+                                    counterclockwise 90, 180, 270 degree(s)
+                                 */
+           case 4:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+i1*H+R-1-j1);
+             break;
+           case 5:
               for (i1=0; i1<R; i1++)
                 for (j1=0; j1<R; j1++)
-                  *(a+i1*R+j1)= *(h+j1*R+i1);
+                  *(a+i1*R+j1)= *(h+(R-1-j1)*H+R-1-i1);
+              break;
+           case 6:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*H+j1);
+             break;
+           case 7:
+              for (i1=0; i1<R; i1++)
+                for (j1=0; j1<R; j1++)
+                  *(a+i1*R+j1)= *(h+(j1)*H+i1);
               break;
 
-        } /* end switch */
-    }
+           } /* end switch */
 }
 
-__device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int y){
+__device__ int Classify(int* inputBlock,int inputSize){
     const int BlockSize = Rb;
     int permu[BlockSize][BlockSize];
     int a1,a2,a3,a4; //Four subblock of the classify block
@@ -139,7 +131,7 @@ __device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int 
     int kout;
     //Permutation
     for(k=0;k<8;k++){
-        permutation(inputImage,imageSize,&permu[0][0],x,y,BlockSize,k);
+        permutation(inputBlock,&permu[0][0],inputSize,BlockSize,k);
         //Calculate a1,a2,a3,a4
         a1=0;
         a2=0;
@@ -174,13 +166,26 @@ __device__ int Classify(cuda::PtrStep<uchar> inputImage,int imageSize,int x,int 
 
 __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> Result){
     int x= blockIdx.x;
-    int y= threadIdx.x; 
+    int y= threadIdx.x;
+    __shared__ int tmpDown[Rb][N2];
+    if(y<Dnum){
+        for(int i=0;i<Rb;i++){
+            tmpDown[i][y] = downImage(x+i,y);
+        }
+    }else{
+        for(int i=0;i<Rb;i++){
+            for(int j=0;j<Rb;j++){
+                tmpDown[i][y+j] = downImage(x+i,y+j);
+            }
+        }
+    }
+    __syncthreads();
     if(x<Dnum && y<Dnum){
-        Result(x,y) = Classify(downImage,N2,x,y);
+        Result(x,y) = Classify(&tmpDown[0][y],N2);
     }
 }
 
-__device__ void calSM(int *sourceR,int* sourceD,float *destination){
+__device__ void calSM(int *sourceR,int* sourceD,float* desS,float* desM,float* desErr){
     int Ud = 32;
     int m = 32;
     int i,j,ks;
@@ -219,9 +224,9 @@ __device__ void calSM(int *sourceR,int* sourceD,float *destination){
             err += (tmperr*tmperr);
         }
     }
-    *(destination+0) = ks;
-    *(destination+1) = m;
-    *(destination+2) = err;
+    *desS = (float)ks;
+    *desM = (float)m;
+    *desErr = err;
 }
 
 __device__ float calK(int Rk,int Dk){
@@ -286,72 +291,101 @@ __device__ float calK(int Rk,int Dk){
     }
 }
 
-__global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downimage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
-    //int i,j,m;
+__global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
     __shared__ float tmpOutput[5][Dnum];
+    __shared__ int tmpDown[Rb][N2];
+    int i,j;
     int tmpR[Rb][Rb];
-    int tmpD[Rb][Rb];
-    float destination[3];
+    int perR[Rb][Rb];
+    //int tmpD[Rb][Rb];
+    int perD[Rb][Rb];
+    float s,m,err;
+    float* ds = &s;
+    float* dm = &m;
+    float* derr = &err;
     int Dclass,Rclass;
     int Dk,Rk;
     int mask=1;
     int offset=1;
     int x = blockIdx.x;
     int y = threadIdx.x;
-    Dclass = klass(x,y)/10;
-    Rclass = Classify(image,N,Rx,Ry);
-    Dk = klass(x,y)%10;
-    tmpOutput[4][y] = 6553500;
-    if(x<Dnum && y < Dnum){
-        if(Dclass == Rclass/10){
-            Rk = Rclass%10;
-            permutation(image,N,&tmpR[0][0],Rx,Ry,Rb,Rk);
-            permutation(downimage,N2,&tmpD[0][0],x,y,Rb,Dk);
-            calSM(&tmpR[0][0],&tmpD[0][0],&destination[0]);
-            tmpOutput[0][y] = y;
-            tmpOutput[1][y] = calK(Rk,Dk);
-            tmpOutput[2][y] = destination[0];
-            tmpOutput[3][y] = destination[1];
-            tmpOutput[4][y] = destination[2];
+    //Set shared mem
+    if(y<Dnum){
+        for(i=0;i<Rb;i++){
+            tmpDown[i][y] = downImage(x+i,y);
         }
-        __syncthreads();
-
-        while(offset < Dnum){
-            if((y & mask) == 0 && (y+offset) < Dnum){
-                if(tmpOutput[4][y+offset] < tmpOutput[4][y]){
-                    tmpOutput[0][y] = tmpOutput[0][y+offset];
-                    tmpOutput[1][y] = tmpOutput[1][y+offset];
-                    tmpOutput[2][y] = tmpOutput[2][y+offset];
-                    tmpOutput[3][y] = tmpOutput[3][y+offset];
-                    tmpOutput[4][y] = tmpOutput[4][y+offset];   
-                }
-            
+    }else{
+        for(i=0;i<Rb;i++){
+            for(j=0;j<Rb;j++){
+                tmpDown[i][y+j] = downImage(x+i,y+j);
             }
-            offset += offset;
-            mask = offset + mask;
-            __syncthreads();
-        }
-
-        if(y==0){
-            Output[x*5]= tmpOutput[0][y];
-            Output[x*5+1]= tmpOutput[1][y];
-            Output[x*5+2]= tmpOutput[2][y];
-            Output[x*5+3]= tmpOutput[3][y];
-            Output[x*5+4]= tmpOutput[4][y];
         }
     }
+    __syncthreads();
+    //Set Range block
+    for(i=0;i<Rb;i++){
+        for(j=0;j<Rb;j++){
+            tmpR[i][j] = image(Rx+i,Ry+j);
+        }
+    }
+    Dclass = klass(x,y)/10;
+    Rclass = Classify(&tmpR[0][0],Rb);
+    Dk = klass(x,y)%10;
+    tmpOutput[4][y] = 6553500;
+    
+    if(Dclass == Rclass/10){
+        Rk = Rclass%10;
+        permutation(&tmpR[0][0],&perR[0][0],Rb,Rb,Rk);
+        permutation(&tmpDown[0][y],&perD[0][0],N2,Rb,Dk);
+        calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
+        tmpOutput[0][y] = y;
+        tmpOutput[1][y] = calK(Rk,Dk);
+        tmpOutput[2][y] = *ds;
+        tmpOutput[3][y] = *dm;
+        tmpOutput[4][y] = *derr;
+    }
+    __syncthreads();
+
+    while(offset < Dnum){
+        if((y & mask) == 0 && (y+offset) < Dnum){
+            if(tmpOutput[4][y+offset] < tmpOutput[4][y]){
+                tmpOutput[0][y] = tmpOutput[0][y+offset];
+                tmpOutput[1][y] = tmpOutput[1][y+offset];
+                tmpOutput[2][y] = tmpOutput[2][y+offset];
+                tmpOutput[3][y] = tmpOutput[3][y+offset];
+                tmpOutput[4][y] = tmpOutput[4][y+offset];   
+            }
+            
+        }
+        offset += offset;
+        mask = offset + mask;
+        __syncthreads();
+    }
+
+    if(y==0){
+        Output[x*5]= tmpOutput[0][y];
+        Output[x*5+1]= tmpOutput[1][y];
+        Output[x*5+2]= tmpOutput[2][y];
+        Output[x*5+3]= tmpOutput[3][y];
+        Output[x*5+4]= tmpOutput[4][y];
+    }
 } 
+
 
 int main(int argc, char** argv){
     if(!InitCUDA()) return 0;
     printf("CUDA initialized.\n");
     clock_t start, end, totaltime;
     size_t free_mem,total_mem;
+    cudaEvent_t startEvent,stopEvent;
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&stopEvent);
+    float eventTime;
     
     Mat image,downimage;
     float *output; 
     cuda::GpuMat Gpuimage,Gpudownimage;
-    cuda::GpuMat Gpuclass(500,500,CV_8U);
+    cuda::GpuMat Gpuclass(Dnum,Dnum,CV_8U);
     float *GpuOutput;
     cudaMalloc((void**)&GpuOutput,sizeof(float)*5*Dnum);
     output = (float*)malloc(sizeof(float)*5*Dnum);
@@ -376,8 +410,11 @@ int main(int argc, char** argv){
     Gpudownimage.upload(downimage);
     
     //Classify the domain block into 3 class
-    DomainBlockClassify<<<200,200>>>(Gpudownimage,Gpuclass);
-    
+    cudaEventCreate(&startEvent);
+    DomainBlockClassify<<<Dnum,Dnum>>>(Gpudownimage,Gpuclass);
+    cudaEventCreate(&stopEvent);
+    cudaEventElapsedTime(&eventTime,startEvent,stopEvent);
+    cout << "Classify Time : " << eventTime << endl;
     //For each Range, calculate s,m value
     for(i=0;i<N;i+=Rb){
         for(j=0;j<N;j+=Rb){

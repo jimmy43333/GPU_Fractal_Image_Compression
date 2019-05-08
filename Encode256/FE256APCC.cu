@@ -7,19 +7,19 @@
 #include <opencv2/core/cuda.hpp>
 #include <vector>
 
-#define  N      512
-#define  N2     256
+#define  N      256
+#define  N2     128
 #define  Db      16
 #define  Rb       8
-#define  Dnum   248  //N2-Rb
+#define  Dnum   120  //N2-Rb
 #define  threshold 0.9
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512APCC.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/LennaGray512.tif
+//    nvcc FE256APCC.cu -o FE256 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE256 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -424,7 +424,7 @@ int main(int argc, char** argv){
     resize(image,downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     //Open the file for store encoding data
     fstream outfile;
-    outfile.open("512Outcode",ios::out);
+    outfile.open("256Outcode",ios::out);
     if(!outfile){
         cout << "Open out file fail!!" << endl;
         return 0;

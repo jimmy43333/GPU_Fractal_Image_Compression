@@ -12,13 +12,14 @@
 #define  Db       16
 #define  Rb        8
 #define  Dnum    248  //N2-Rb
+#define  threshold 0.95
 
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//  nvcc FE512Baseline.cu -o FE512 `pkg-config --cflags --libs opencv`
+//  nvcc FE512APCCB.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
 //  nvprof ./FE512 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
@@ -124,12 +125,39 @@ __device__ void permutation(const int *h,int *a,int R,int k){
            } /* end switch */
 }
 
+__device__ float PearsonCorrelation(cuda::PtrStep<uchar> sourceR,int Ri,int Rj, int* sourceD){
+    int i,j;
+    int sum_X = 0, sum_Y = 0, sum_XY = 0; 
+    int squareSum_X = 0, squareSum_Y = 0; 
+  
+    for (i = 0; i < Rb; i++){
+        for(j=0;j<Rb;j++){ 
+            sum_X += sourceR(Ri+i,Rj+j); 
+            sum_Y += *(sourceD+i*Rb+j); 
+            sum_XY += sourceR(Ri+i,Rj+j) * (*(sourceD+i*Rb+j)); 
+  
+            // sum of square of array elements. 
+            squareSum_X +=sourceR(Ri+i,Rj+j) *sourceR(Ri+i,Rj+j); 
+            squareSum_Y += (*(sourceD+i*Rb+j)) * (*(sourceD+i*Rb+j));
+        } 
+    } 
+  
+    // use formula for calculating correlation coefficient. 
+    float corr = (float)(Rb*Rb * sum_XY - sum_X * sum_Y)  
+                  / sqrt((Rb*Rb * squareSum_X - sum_X * sum_X)  
+                      * (Rb*Rb * squareSum_Y - sum_Y * sum_Y)); 
+  
+    return corr; 
+}
+
+
 __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar> Downsample,float* Output,int Ri,int Rj,int RangeSize){
     __shared__ float tmpOutput[5][Dnum];
     __shared__ int tmpDown[Rb][N2];
     int per[Rb][Rb];
     int tmp[Rb][Rb];
     int i,j,k,Ud,m;
+    float corr;
     short int ks;
     float s,sup,sdown;
     float err,tmperr,minerr;
@@ -166,35 +194,38 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
         m = m/(RangeSize*RangeSize);
         for(k=0;k<8;k++){
             permutation(&tmp[0][0],&per[0][0],Rb,k);
-            sup=0;
-            sdown=0;
-            //Calculate s,m,k
-            for(i=0;i<RangeSize;i++){
-                for(j=0;j<RangeSize;j++){
-                    sup += (tmp[i][j]-Ud)*Original(Ri+i,Rj+j);
-                    sdown += (tmp[i][j]-Ud)*(tmp[i][j]-Ud);
+            corr = PearsonCorrelation(Original,Ri,Rj,&tmp[0][0]);
+            if(corr > threshold){
+                sup=0;
+                sdown=0;
+                //Calculate s,m,k
+                for(i=0;i<RangeSize;i++){
+                    for(j=0;j<RangeSize;j++){
+                        sup += (tmp[i][j]-Ud)*Original(Ri+i,Rj+j);
+                        sdown += (tmp[i][j]-Ud)*(tmp[i][j]-Ud);
+                    }
                 }
-            }
-            s=(fabs(sdown)<0.01? 0.0 : sup/sdown);
-            ks=(s<-1? 0: s>=2.1? 31:(short int)(10.5+s*10));
-            s=0.1*ks-1;
-            err=0.005;
-            for(i=0;i<RangeSize;i++){
-                for(j=0;j<RangeSize;j++){
-                    tmperr = s*(tmp[i][j]-Ud)+ m -Original(Ri+i,Rj+j);
-                    err += tmperr*tmperr;
+                s=(fabs(sdown)<0.01? 0.0 : sup/sdown);
+                ks=(s<-1? 0: s>=2.1? 31:(short int)(10.5+s*10));
+                s=0.1*ks-1;
+                err=0.005;
+                for(i=0;i<RangeSize;i++){
+                    for(j=0;j<RangeSize;j++){
+                        tmperr = s*(tmp[i][j]-Ud)+ m -Original(Ri+i,Rj+j);
+                        err += tmperr*tmperr;
+                        if (err >= minerr){ 
+                            break;
+                        }
+                    }
                     if (err >= minerr){ 
                         break;
                     }
                 }
-                if (err >= minerr){ 
-                    break;
+                if(err < minerr){
+                    minerr = err;
+                    tmpOutput[0][y]=k;
+                    tmpOutput[1][y]=ks;
                 }
-            }
-            if(err < minerr){
-                minerr = err;
-                tmpOutput[0][y]=k;
-                tmpOutput[1][y]=ks;
             }    
         }
         
@@ -228,6 +259,9 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
         }
     }   
 }
+
+
+
 
 int main(int argc, char** argv){
     if(!InitCUDA()) return 0;
@@ -277,7 +311,6 @@ int main(int argc, char** argv){
                     u= output[ll*5+3]; 
                 }
             }
-            cout << Emin << endl;
             Emin = 6553600;
             outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);        
         }

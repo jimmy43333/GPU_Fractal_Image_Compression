@@ -12,13 +12,12 @@
 #define  Db      16
 #define  Rb       8
 #define  Dnum   248  //N2-Rb
-#define  threshold 0.9
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512APCC.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvcc FE512ClassifyN.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
 //    nvprof ./FE512 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
@@ -182,7 +181,7 @@ __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep
     }
     __syncthreads();
     if(x<Dnum && y<Dnum){
-        Result(x,y) = Classify(&tmpDown[0][y],N2);
+        Result(x,y) = 0;
     }
 }
 
@@ -292,32 +291,6 @@ __device__ float calK(int Rk,int Dk){
     }
 }
 
-__device__ float PearsonCorrelation(int* sourceR, int* sourceD){
-    int i,j;
-    int sum_X = 0, sum_Y = 0, sum_XY = 0; 
-    int squareSum_X = 0, squareSum_Y = 0; 
-  
-    for (i = 0; i < Rb; i++){
-        for(j=0;j<Rb;j++){ 
-            sum_X += *(sourceR+i*Rb+j); 
-            sum_Y += *(sourceD+i*Rb+j); 
-            sum_XY += (*(sourceR+i*Rb+j)) * (*(sourceD+i*Rb+j)); 
-  
-            // sum of square of array elements. 
-            squareSum_X += (*(sourceR+i*Rb+j)) * (*(sourceR+i*Rb+j)); 
-            squareSum_Y += (*(sourceD+i*Rb+j)) * (*(sourceD+i*Rb+j));
-        } 
-    } 
-  
-    // use formula for calculating correlation coefficient. 
-    float corr = (float)(Rb*Rb * sum_XY - sum_X * sum_Y)  
-                  / sqrt((Rb*Rb * squareSum_X - sum_X * sum_X)  
-                      * (Rb*Rb * squareSum_Y - sum_Y * sum_Y)); 
-  
-    return corr; 
-}
-
-
 __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
     __shared__ float tmpOutput[5][Dnum];
     __shared__ int tmpDown[Rb][N2];
@@ -336,7 +309,6 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     int offset=1;
     int x = blockIdx.x;
     int y = threadIdx.x;
-    float correlation;
     //Set shared mem
     if(y<Dnum){
         for(i=0;i<Rb;i++){
@@ -356,24 +328,21 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
             tmpR[i][j] = image(Rx+i,Ry+j);
         }
     }
-    Dclass = klass(x,y)/10;
+    Dclass = Classify(&tmpDown[0][y],N2);
     Rclass = Classify(&tmpR[0][0],Rb);
-    Dk = klass(x,y)%10;
+    Dk = Dclass%10;
     tmpOutput[4][y] = 6553500;
     
-    if(Dclass == Rclass/10){
+    if(Dclass/10 == Rclass/10){
         Rk = Rclass%10;
         permutation(&tmpR[0][0],&perR[0][0],Rb,Rb,Rk);
         permutation(&tmpDown[0][y],&perD[0][0],N2,Rb,Dk);
-        correlation = PearsonCorrelation(&perR[0][0],&perD[0][0]);
-        if(correlation > threshold){
-            calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
-            tmpOutput[0][y] = y;
-            tmpOutput[1][y] = calK(Rk,Dk);
-            tmpOutput[2][y] = *ds;
-            tmpOutput[3][y] = *dm;
-            tmpOutput[4][y] = *derr;
-        }
+        calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
+        tmpOutput[0][y] = y;
+        tmpOutput[1][y] = calK(Rk,Dk);
+        tmpOutput[2][y] = *ds;
+        tmpOutput[3][y] = *dm;
+        tmpOutput[4][y] = *derr;
     }
     __syncthreads();
 
@@ -442,7 +411,7 @@ int main(int argc, char** argv){
     
     //Classify the domain block into 3 class
     cudaEventCreate(&startEvent);
-    DomainBlockClassify<<<Dnum,Dnum>>>(Gpudownimage,Gpuclass);
+    //DomainBlockClassify<<<Dnum,Dnum>>>(Gpudownimage,Gpuclass);
     cudaEventCreate(&stopEvent);
     cudaEventElapsedTime(&eventTime,startEvent,stopEvent);
     cout << "Classify Time : " << eventTime << endl;

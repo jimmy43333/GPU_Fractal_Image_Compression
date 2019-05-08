@@ -19,7 +19,7 @@ using namespace std;
 
 //Run on terminal:
 //  nvcc FE1024Baseline.cu -o FE1024 `pkg-config --cflags --libs opencv`
-//  nvprof ./FE1024 ../Dataset/FallColor1024.tif
+//  nvprof ./FE1024 ../Dataset/LennaGray512.tif
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -72,68 +72,62 @@ bool InitCUDA()
     return true;
 }
 
-__device__ void permutation(cuda::PtrStep<uchar> input,int inputSize,int *a,int x,int y,int R,int k){
+__device__ void permutation(const int *h,int *a,int R,int k){
     //x,y is the position in the Mat h.
     //R is the size of array a.
-    if(x+R <= inputSize && y+R <= inputSize){
-        int i1,j1;
-        int h[Rb*Rb];
-        for (i1=0; i1<R; i1++){
-            for (j1=0; j1<R; j1++){
-                *(h+i1*R+j1) = input(x+i1,y+j1);
-            }
-        }
-        switch(k){
-               case 0: 
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1) = *(h+i1*R+j1);
-                 break;
-               case 1:
-                 for (i1=0; i1<R; i1++)
-                  for (j1=0; j1<R; j1++)
-                   *(a+i1*R+j1)= *(h+(R-1-j1)*R+i1);
-                break;
-             case 2:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+R-1-j1);
-                 break;
-            case 3:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                    *(a+i1*R+j1)= *(h+j1*R+R-1-i1);
-                 break;
-                                     /* Reflect w.r.t. y-axis,  then rotate 
-                                        counterclockwise 90, 180, 270 degree(s)
-                                     */
-            case 4:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+i1*R+R-1-j1);
-                 break;
-            case 5:
-                  for (i1=0; i1<R; i1++)
-                    for (j1=0; j1<R; j1++)
-                      *(a+i1*R+j1)= *(h+(R-1-j1)*R+R-1-i1);
-                 break;
-            case 6:
-                 for (i1=0; i1<R; i1++)
-                   for (j1=0; j1<R; j1++)
-                     *(a+i1*R+j1)= *(h+(R-1-i1)*R+j1);
-                 break;
-            case 7:
+    int i1,j1;
+    switch(k){
+           case 0: 
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1) = *(h+i1*R+j1);
+             break;
+           case 1:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-j1)*R+i1);
+             break;
+           case 2:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*R+R-1-j1);
+             break;
+           case 3:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+j1*R+R-1-i1);
+             break;
+                                 /* Reflect w.r.t. y-axis,  then rotate 
+                                    counterclockwise 90, 180, 270 degree(s)
+                                 */
+           case 4:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+i1*R+R-1-j1);
+             break;
+           case 5:
               for (i1=0; i1<R; i1++)
                 for (j1=0; j1<R; j1++)
-                  *(a+i1*R+j1)= *(h+j1*R+i1);
+                  *(a+i1*R+j1)= *(h+(R-1-j1)*R+R-1-i1);
+              break;
+           case 6:
+             for (i1=0; i1<R; i1++)
+               for (j1=0; j1<R; j1++)
+                 *(a+i1*R+j1)= *(h+(R-1-i1)*R+j1);
+             break;
+           case 7:
+              for (i1=0; i1<R; i1++)
+                for (j1=0; j1<R; j1++)
+                  *(a+i1*R+j1)= *(h+(j1)*R+i1);
               break;
 
-        } /* end switch */
-    }
+           } /* end switch */
 }
 
 __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar> Downsample,float* Output,int Ri,int Rj,int RangeSize){
     __shared__ float tmpOutput[5][Dnum];
+    __shared__ int tmpDown[Rb][N2];
+    int per[Rb][Rb];
     int tmp[Rb][Rb];
     int i,j,k,Ud,m;
     short int ks;
@@ -144,20 +138,34 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
     const int x = blockIdx.x;
     const int y = threadIdx.x;
     minerr=6553600;
+    //Set shared mem
+    if(y<Dnum){
+        for(i=0;i<Rb;i++){
+            tmpDown[i][y] = Downsample(x+i,y);
+        }
+    }else{
+        for(i=0;i<Rb;i++){
+            for(j=0;j<Rb;j++){
+                tmpDown[i][y+j] = Downsample(x+i,y+j);
+            }
+        }
+    }
+    __syncthreads();
     
     if(x<Dnum && y<Dnum){
         Ud=32;
         m=32;
         for(i=0;i < RangeSize;i++){
             for(j=0;j < RangeSize;j++){
-                Ud += Downsample(x+i,y+j);
+                tmp[i][j] = tmpDown[i][y+j];
+                Ud += tmp[i][j];
                 m += Original(Ri+i,Rj+j);
             }
         }
         Ud = Ud/(RangeSize*RangeSize);
         m = m/(RangeSize*RangeSize);
         for(k=0;k<8;k++){
-            permutation(Downsample,N2,&tmp[0][0],x,y,Rb,k);
+            permutation(&tmp[0][0],&per[0][0],Rb,k);
             sup=0;
             sdown=0;
             //Calculate s,m,k
@@ -236,11 +244,6 @@ int main(int argc, char** argv){
 
     //Input image and DownSampling the inputdata
     image = imread(argv[1],0);
-    if(image.empty()){
-        cout << "Input Image Error! " << endl;
-        return 0;
-    }
-    cout << image.cols << " " << image.rows;
     //image.create(N,N,CV_8U);
     //image = readRawfile(argv[1],N,N);
     downsample.create(N2,N2,CV_8U);
@@ -253,7 +256,7 @@ int main(int argc, char** argv){
     gpuImage.upload(image);
     gpuDownsample.upload(downsample);
     //Open the file for store encoding data
-    outfile.open("512Outcode",ios::out);
+    outfile.open("1024Outcode",ios::out);
     if(!outfile){
         cout << "Open out file fail!!" << endl;
         return 0;
@@ -274,6 +277,7 @@ int main(int argc, char** argv){
                     u= output[ll*5+3]; 
                 }
             }
+            cout << Emin << endl;
             Emin = 6553600;
             outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);        
         }
