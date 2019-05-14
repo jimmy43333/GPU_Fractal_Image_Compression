@@ -5,19 +5,18 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#define  N    256
-#define  N2   128
+#define  N   1024
+#define  N2   512
 #define  Db    16
 #define  Rb     8
-#define  Dnum 120 
-#define  nRun  10
+#define  nRun  20
 
 
 using namespace cv;
 using namespace std;
 
-// g++ Decoding256.cpp -o FD256 `pkg-config --cflags --libs opencv`
-// ./FD256 256Outcode 
+// g++ Decoding1024.cpp -o FD1024 `pkg-config --cflags --libs opencv`
+// ./FD1024 ../1024Outcode 
 
 typedef struct code{
     int x;
@@ -91,7 +90,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
 
     for(i=0;i<N;i++){
         for(j=0;j<N;j++){
-            DecodeImage.at<uchar>(i,j) = 30;
+            DecodeImage.at<uchar>(i,j) = 50;
         }
     }
     
@@ -102,12 +101,12 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         nn=0;
         for(i=0;i<N;i+=Rb){
             for(j=0;j<N;j+=Rb){
+                Dmean=0;
                 x= inputcode->at(nn).x;
                 y= inputcode->at(nn).y;
                 k= inputcode->at(nn).k;
                 u= inputcode->at(nn).m;
-                s= 0.02*(inputcode->at(nn).ns)-1.0; 
-
+                s= 0.10*(inputcode->at(nn).ns)-1.0; 
                 for(ii=0;ii<Rb;ii++){
                     for(jj=0;jj<Rb;jj++){
                         D[ii][jj] = down.at<uchar>(x+ii,y+jj);
@@ -118,7 +117,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
                 permutation(&D[0][0],&PD[0][0],Rb,k);
                 for(ii=0;ii<Rb;ii++){
                     for(jj=0;jj<Rb;jj++){
-                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u; 
+                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u;
                     }
                 }
                 nn++;
@@ -127,7 +126,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         //Copy to the decode image
         for(i=0;i<N;i++){
             for(j=0;j<N;j++){
-                tmpoutput[i][j]=(tmpoutput[i][j]>255? 255 : tmpoutput[i][j]<0? 0 : tmpoutput[i][j]);
+                tmpoutput[i][j]=(tmpoutput[i][j] > 255 ? 255 : tmpoutput[i][j]< 0 ? 0 : tmpoutput[i][j]); 
                 DecodeImage.at<uchar>(i,j)=tmpoutput[i][j];
             }
         }
@@ -167,7 +166,7 @@ int main(int argc, char** argv){
     Dimage.create(N,N,CV_8U);
     Decode(&input,Dimage);
     imshow("Display",Dimage);
-    imwrite("512FEImage.tif",Dimage);
+    imwrite("512FEImage.tiff",Dimage);
     waitKey(0);
 }
 

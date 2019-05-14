@@ -10,15 +10,15 @@
 #define  N     1024
 #define  N2     512
 #define  Db      16
-#define  Rb       8
+#define  Rb       4
 #define  Dnum   504  //N2-Rb
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512Classify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/LennaGray512.tif
+//    nvcc FE1024Classify.cu -o FE1024 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE1024 ../Dataset/Image1024/
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -187,7 +187,7 @@ __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep
 
 __device__ void calSM(int *sourceR,int* sourceD,float* desS,float* desM,float* desErr){
     int Ud = 32;
-    int m = 32;
+    int m = 0;
     int i,j,ks;
     float s;
     float sup = 0.0;
@@ -393,7 +393,7 @@ int main(int argc, char** argv){
     resize(image,downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     //Open the file for store encoding data
     fstream outfile;
-    outfile.open("512Outcode",ios::out);
+    outfile.open("1024Outcode",ios::out);
     if(!outfile){
         cout << "Open out file fail!!" << endl;
         return 0;

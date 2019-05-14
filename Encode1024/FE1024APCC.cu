@@ -7,18 +7,19 @@
 #include <opencv2/core/cuda.hpp>
 #include <vector>
 
-#define  N      512
-#define  N2     256
+#define  N     1024
+#define  N2     512
 #define  Db      16
 #define  Rb       8
-#define  Dnum   249  //N2-Rb+1
+#define  Dnum   256  //N2-Rb
+#define  threshold 0.9
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512Classify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/Image512/LennaGray512.tiff 
+//    nvcc FE1024APCC.cu -o FE1024 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE1024 ../Dataset/Image1024/Man.tiff
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -291,6 +292,32 @@ __device__ float calK(int Rk,int Dk){
     }
 }
 
+__device__ float PearsonCorrelation(int* sourceR, int* sourceD){
+    int i,j;
+    int sum_X = 0, sum_Y = 0, sum_XY = 0; 
+    int squareSum_X = 0, squareSum_Y = 0; 
+  
+    for (i = 0; i < Rb; i++){
+        for(j=0;j<Rb;j++){ 
+            sum_X += *(sourceR+i*Rb+j); 
+            sum_Y += *(sourceD+i*Rb+j); 
+            sum_XY += (*(sourceR+i*Rb+j)) * (*(sourceD+i*Rb+j)); 
+  
+            // sum of square of array elements. 
+            squareSum_X += (*(sourceR+i*Rb+j)) * (*(sourceR+i*Rb+j)); 
+            squareSum_Y += (*(sourceD+i*Rb+j)) * (*(sourceD+i*Rb+j));
+        } 
+    } 
+  
+    // use formula for calculating correlation coefficient. 
+    float corr = (float)(Rb*Rb * sum_XY - sum_X * sum_Y)  
+                  / sqrt((Rb*Rb * squareSum_X - sum_X * sum_X)  
+                      * (Rb*Rb * squareSum_Y - sum_Y * sum_Y)); 
+  
+    return corr; 
+}
+
+
 __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uchar> downImage,cuda::PtrStep<uchar> klass,float *Output,int Rx,int Ry){
     __shared__ float tmpOutput[5][Dnum];
     __shared__ int tmpDown[Rb][N2];
@@ -309,6 +336,7 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     int offset=1;
     int x = blockIdx.x;
     int y = threadIdx.x;
+    float correlation;
     //Set shared mem
     if(y<Dnum){
         for(i=0;i<Rb;i++){
@@ -331,18 +359,21 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     Dclass = klass(x,y)/10;
     Rclass = Classify(&tmpR[0][0],Rb);
     Dk = klass(x,y)%10;
-    tmpOutput[4][y] = 65535;
+    tmpOutput[4][y] = 6553500;
     
     if(Dclass == Rclass/10){
         Rk = Rclass%10;
         permutation(&tmpR[0][0],&perR[0][0],Rb,Rb,Rk);
         permutation(&tmpDown[0][y],&perD[0][0],N2,Rb,Dk);
-        calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
-        tmpOutput[0][y] = y;
-        tmpOutput[1][y] = calK(Rk,Dk);
-        tmpOutput[2][y] = *ds;
-        tmpOutput[3][y] = *dm;
-        tmpOutput[4][y] = *derr;
+        correlation = PearsonCorrelation(&perR[0][0],&perD[0][0]);
+        if(correlation > threshold){
+            calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
+            tmpOutput[0][y] = y;
+            tmpOutput[1][y] = calK(Rk,Dk);
+            tmpOutput[2][y] = *ds;
+            tmpOutput[3][y] = *dm;
+            tmpOutput[4][y] = *derr;
+        }
     }
     __syncthreads();
 
@@ -393,7 +424,7 @@ int main(int argc, char** argv){
     resize(image,downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     //Open the file for store encoding data
     fstream outfile;
-    outfile.open("512Outcode",ios::out);
+    outfile.open("1024Outcode",ios::out);
     if(!outfile){
         cout << "Open out file fail!!" << endl;
         return 0;
@@ -411,14 +442,14 @@ int main(int argc, char** argv){
     
     //Classify the domain block into 3 class
     cudaEventCreate(&startEvent);
-    DomainBlockClassify<<<Dnum,Dnum>>>(Gpudownimage,Gpuclass);
+    DomainBlockClassify<<<Dnum*2,Dnum>>>(Gpudownimage,Gpuclass);
     cudaEventCreate(&stopEvent);
     cudaEventElapsedTime(&eventTime,startEvent,stopEvent);
     cout << "Classify Time : " << eventTime << endl;
     //For each Range, calculate s,m value
     for(i=0;i<N;i+=Rb){
         for(j=0;j<N;j+=Rb){
-            RangeParallel<<<Dnum,Dnum>>>(Gpuimage,Gpudownimage,Gpuclass,GpuOutput,i,j);
+            RangeParallel<<<Dnum*2,Dnum>>>(Gpuimage,Gpudownimage,Gpuclass,GpuOutput,i,j);
             cudaMemcpy2D(output,sizeof(float)*5,GpuOutput,sizeof(float)*5,sizeof(float)*5,Dnum,cudaMemcpyDeviceToHost); 
             for(ll=0;ll<Dnum;ll++){
                 if(output[ll*5+4] <= Emin){

@@ -186,8 +186,8 @@ __global__ void DomainBlockClassify(cuda::PtrStepSz<uchar> downImage,cuda::PtrSt
 }
 
 __device__ void calSM(int *sourceR,int* sourceD,float* desS,float* desM,float* desErr){
-    int Ud = 32;
-    int m = 32;
+    int Ud = 0;
+    int m = 0;
     int i,j,ks;
     float s;
     float sup = 0.0;

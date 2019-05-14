@@ -54,16 +54,17 @@ double Psnr(Mat& origin,Mat& compress){
     }
     for(int i=0;i<origin.rows;i++){
         for(int j=0;j<origin.cols;j++){
-            tmp = origin.at<uchar>(i,j) - compress.at<uchar>(i,j);
-            mse += (tmp*tmp);
+            mse += pow(origin.at<uchar>(i,j) - (int)compress.at<uchar>(i,j),2);
         }
-    }
     mse = mse/(origin.rows * origin.cols);
-    psnr = 10*log10((255*255)/mse);
+    }
+    cout << "mse: " << mse << endl;
+    tmp = pow(255,2)/mse;
+    psnr = 10*log10(tmp);
     return psnr;
 }
 
-double Ssim(Mat &i1, Mat & i2){
+Scalar Ssim(Mat &i1, Mat & i2){
 	const double C1 = 6.5025, C2 = 58.5225;
 	int d = CV_32F;
 	Mat I1, I2;
@@ -100,21 +101,40 @@ double Ssim(Mat &i1, Mat & i2){
 	divide(t3, t1, ssim_map);
 	Scalar mssim = mean(ssim_map);
  
-	double ssim = (mssim.val[0] + mssim.val[1] + mssim.val[2]) /3;
-	return ssim;
+	//double ssim = (mssim.val[0] + mssim.val[1] + mssim.val[2])/3;
+	return mssim;
+}
+
+double getPSNR(const Mat& I1, const Mat& I2) { 
+    Mat s1; 
+    absdiff(I1, I2, s1); // |I1 - I2|AbsDiff函数是 OpenCV 中计算两个数组差的绝对值的函数 
+    s1.convertTo(s1, CV_32F); // 这里我们使用的CV_32F来计算，因为8位无符号char是不能进行平方计算 
+    s1 = s1.mul(s1); // |I1 - I2|^2 
+    Scalar s = sum(s1); //对每一个通道进行加和 
+    double sse = s.val[0] + s.val[1] + s.val[2]; // sum channels 
+    if( sse <= 1e-10) // 对于非常小的值我们将约等于0 
+        return 0; 
+    else 
+    { 
+        double mse =sse /(double)(I1.channels() * I1.total()); //计算MSE 
+        double psnr = 10.0*log10((255*255)/mse); 
+        return psnr;//返回PSNR 
+    } 
 }
 
 int main(int argc, char** argv){
     Mat image,Encode;
-	image = imread(argv[1],0);
-    Encode = imread(argv[2],0);
-	//image = readRawfile(argv[1],512,512);
+	image = imread(argv[1],-1);
+    //Encode = imread(argv[2],-1);
     double psnr = 0;
+    Scalar mssim;
     double ssim = 0;
-    psnr = Psnr(image,Encode);
-    ssim = Ssim(image,Encode);
+    //psnr = getPSNR(image,Encode);
+    //mssim = Ssim(image,Encode);
+    ssim = (mssim.val[0] + mssim.val[1] + mssim.val[2])/3;
     cout << "psnr : " << psnr << endl;
-    cout << "ssim : " << ssim << endl;
+    cout << "ssim : " << mssim << " " << ssim << endl;
+    imwrite(argv[2],image);
     return 0;
 }
 

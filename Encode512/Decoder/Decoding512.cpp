@@ -8,16 +8,15 @@
 #define  N    512
 #define  N2   256
 #define  Db    16
-#define  Rb     8
-#define  Dnum 248 
-#define  nRun  10
+#define  Rb    16
+#define  nRun   7
 
 
 using namespace cv;
 using namespace std;
 
 // g++ Decoding512.cpp -o FD512 `pkg-config --cflags --libs opencv`
-// ./FD512 512Outcode 
+// ./FD512 ../512Outcode 
 
 typedef struct code{
     int x;
@@ -91,7 +90,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
 
     for(i=0;i<N;i++){
         for(j=0;j<N;j++){
-            DecodeImage.at<uchar>(i,j) = 30;
+            DecodeImage.at<uchar>(i,j) = 50;
         }
     }
     
@@ -102,6 +101,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         nn=0;
         for(i=0;i<N;i+=Rb){
             for(j=0;j<N;j+=Rb){
+                Dmean=0;
                 x= inputcode->at(nn).x;
                 y= inputcode->at(nn).y;
                 k= inputcode->at(nn).k;
@@ -118,7 +118,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
                 permutation(&D[0][0],&PD[0][0],Rb,k);
                 for(ii=0;ii<Rb;ii++){
                     for(jj=0;jj<Rb;jj++){
-                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u; 
+                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u;
                     }
                 }
                 nn++;
@@ -127,7 +127,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         //Copy to the decode image
         for(i=0;i<N;i++){
             for(j=0;j<N;j++){
-                tmpoutput[i][j]=(tmpoutput[i][j]>255? 0 : tmpoutput[i][j]<0? 0 : tmpoutput[i][j]);
+                tmpoutput[i][j]=(tmpoutput[i][j] > 255 ? 255 : tmpoutput[i][j]< 0 ? 0 : tmpoutput[i][j]); 
                 DecodeImage.at<uchar>(i,j)=tmpoutput[i][j];
             }
         }
@@ -167,7 +167,7 @@ int main(int argc, char** argv){
     Dimage.create(N,N,CV_8U);
     Decode(&input,Dimage);
     imshow("Display",Dimage);
-    imwrite("512FEImage.tif",Dimage);
+    imwrite("512FEImage.tiff",Dimage);
     waitKey(0);
 }
 

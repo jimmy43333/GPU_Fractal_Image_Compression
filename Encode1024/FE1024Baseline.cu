@@ -9,9 +9,10 @@
 
 #define  N      1024
 #define  N2      512
-#define  Db       32
-#define  Rb       16
-#define  Dnum    496  //N2-Rb
+#define  Db       16
+#define  Rb        8
+#define  Dnum    504  //N2-Rb
+#define  ME    65536
 
 
 using namespace cv;
@@ -19,7 +20,7 @@ using namespace std;
 
 //Run on terminal:
 //  nvcc FE1024Baseline.cu -o FE1024 `pkg-config --cflags --libs opencv`
-//  nvprof ./FE1024 ../Dataset/LennaGray512.tif
+//  nvprof ./FE1024 ../Dataset/Image1024/ 
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -137,7 +138,7 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
     int mask=1;
     const int x = blockIdx.x;
     const int y = threadIdx.x;
-    minerr=6553600;
+    minerr= ME;
     //Set shared mem
     if(y<Dnum){
         for(i=0;i<Rb;i++){
@@ -153,8 +154,8 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
     __syncthreads();
     
     if(x<Dnum && y<Dnum){
-        Ud=32;
-        m=32;
+        Ud=0;
+        m=0;
         for(i=0;i < RangeSize;i++){
             for(j=0;j < RangeSize;j++){
                 tmp[i][j] = tmpDown[i][y+j];
@@ -239,7 +240,7 @@ int main(int argc, char** argv){
     float *output; 
     int i,j,ll;
     float Emin;
-    Emin=6553600;
+    Emin= ME;
     int x,y,tau,ns,u;
 
     //Input image and DownSampling the inputdata
@@ -277,8 +278,8 @@ int main(int argc, char** argv){
                     u= output[ll*5+3]; 
                 }
             }
-            cout << Emin << endl;
-            Emin = 6553600;
+            //cout << Emin << endl;
+            Emin = ME;
             outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);        
         }
     }

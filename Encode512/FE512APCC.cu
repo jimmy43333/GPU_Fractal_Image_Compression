@@ -19,7 +19,7 @@ using namespace std;
 
 //Run on terminal:
 //    nvcc FE512APCC.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/LennaGray512.tif
+//    nvprof ./FE512 ../Dataset/Image512/LennaGray512.tiff
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -187,8 +187,8 @@ __global__ void DomainBlockClassify(cuda::PtrStep<uchar> downImage,cuda::PtrStep
 }
 
 __device__ void calSM(int *sourceR,int* sourceD,float* desS,float* desM,float* desErr){
-    int Ud = 32;
-    int m = 32;
+    int Ud = 0;
+    int m = 0;
     int i,j,ks;
     float s;
     float sup = 0.0;

@@ -194,7 +194,7 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
             if(err < minerr){
                 minerr = err;
                 tmpOutput[0][y]=k;
-                tmpOutput[1][y]=ks;
+                tmpOutput[1][y]=s;
             }    
         }
         
@@ -241,6 +241,7 @@ int main(int argc, char** argv){
     float Emin;
     Emin=6553600;
     int x,y,tau,ns,u;
+    float tests;
 
     //Input image and DownSampling the inputdata
     image = imread(argv[1],0);
@@ -274,10 +275,11 @@ int main(int argc, char** argv){
                     y = output[ll*5];
                     tau= output[ll*5+1]; 
                     ns= output[ll*5+2]; 
-                    u= output[ll*5+3]; 
+                    u= output[ll*5+3];
+                    tests =  output[ll*5+2];
                 }
             }
-            cout << Emin << endl;
+            cout << tests << endl;
             Emin = 6553600;
             outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);        
         }
