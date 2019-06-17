@@ -116,7 +116,7 @@ double getPSNR(const Mat& I1, const Mat& I2) {
         return 0; 
     else 
     { 
-        double mse =sse /(double)(I1.channels() * I1.total()); //计算MSE 
+        double mse = sse /(double)(I1.channels() * I1.total()); //计算MSE 
         double psnr = 10.0*log10((255*255)/mse); 
         return psnr;//返回PSNR 
     } 
@@ -124,17 +124,17 @@ double getPSNR(const Mat& I1, const Mat& I2) {
 
 int main(int argc, char** argv){
     Mat image,Encode;
-	image = imread(argv[1],-1);
-    //Encode = imread(argv[2],-1);
+	image = imread(argv[1],1);
+    //Encode = imread(argv[2],1);
     double psnr = 0;
     Scalar mssim;
     double ssim = 0;
     //psnr = getPSNR(image,Encode);
     //mssim = Ssim(image,Encode);
-    ssim = (mssim.val[0] + mssim.val[1] + mssim.val[2])/3;
+    //ssim = (mssim.val[0] + mssim.val[1] + mssim.val[2])/3;
     cout << "psnr : " << psnr << endl;
     cout << "ssim : " << mssim << " " << ssim << endl;
-    imwrite(argv[2],image);
+    imwrite("output.jpg",image);
     return 0;
 }
 
