@@ -9,14 +9,15 @@
 #define  N2   256
 #define  Db    16
 #define  Rb     8
-#define  nRun   7
+#define  Dnum 248 
+#define  nRun  10
 
 
 using namespace cv;
 using namespace std;
 
-// g++ Decoding512.cpp -o FD512 `pkg-config --cflags --libs opencv`
-// ./FD512 ../512Outcode 
+//g++ DecodingColorRGB512.cpp -o FDRGB512 `pkg-config --cflags --libs opencv`
+//./FDRGB512 ../512Outcode
 
 typedef struct code{
     int x;
@@ -26,7 +27,7 @@ typedef struct code{
     int m;
 }code;
 
-void permutation(const int *h,int *a,int R,int k){
+void permutation(const int *h,int x,int y,int *a,int R,int k){
     //x,y is the position in the Mat h.
     //R is the size of array a.
     int i1,j1;
@@ -34,22 +35,22 @@ void permutation(const int *h,int *a,int R,int k){
            case 0: 
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1) = *(h+i1*R+j1);
+                 *(a+i1*R+j1) = *(h+(x+i1)*R+y+j1);
              break;
            case 1:
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1)= *(h+(R-1-j1)*R+i1);
+                 *(a+i1*R+j1)= *(h+(x+R-1-j1)*R+y+i1);
              break;
            case 2:
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1)= *(h+(R-1-i1)*R+R-1-j1);
+                 *(a+i1*R+j1)= *(h+(x+R-1-i1)*R+y+R-1-j1);
              break;
            case 3:
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1)= *(h+j1*R+R-1-i1);
+                 *(a+i1*R+j1)= *(h+(x+j1)*R+y+R-1-i1);
              break;
                                  /* Reflect w.r.t. y-axis,  then rotate 
                                     counterclockwise 90, 180, 270 degree(s)
@@ -57,22 +58,22 @@ void permutation(const int *h,int *a,int R,int k){
            case 4:
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1)= *(h+i1*R+R-1-j1);
+                 *(a+i1*R+j1)= *(h+(x+i1)*R+y+R-1-j1);
              break;
            case 5:
               for (i1=0; i1<R; i1++)
                 for (j1=0; j1<R; j1++)
-                  *(a+i1*R+j1)= *(h+(R-1-j1)*R+R-1-i1);
+                  *(a+i1*R+j1)= *(h+(x+R-1-j1)*R+y+R-1-i1);
               break;
            case 6:
              for (i1=0; i1<R; i1++)
                for (j1=0; j1<R; j1++)
-                 *(a+i1*R+j1)= *(h+(R-1-i1)*R+j1);
+                 *(a+i1*R+j1)= *(h+(x+R-1-i1)*R+y+j1);
              break;
            case 7:
               for (i1=0; i1<R; i1++)
                 for (j1=0; j1<R; j1++)
-                  *(a+i1*R+j1)= *(h+(j1)*R+i1);
+                  *(a+i1*R+j1)= *(h+(x+j1)*R+y+i1);
               break;
 
            } /* end switch */
@@ -87,10 +88,9 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
     float s;
     int D[Rb][Rb],PD[Rb][Rb];
     int tmpoutput[N][N];
-
     for(i=0;i<N;i++){
         for(j=0;j<N;j++){
-            DecodeImage.at<uchar>(i,j) = 50;
+            DecodeImage.at<uchar>(i,j) = 30;
         }
     }
     
@@ -101,7 +101,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         nn=0;
         for(i=0;i<N;i+=Rb){
             for(j=0;j<N;j+=Rb){
-                Dmean=0;
+                Dmean = 0;
                 x= inputcode->at(nn).x;
                 y= inputcode->at(nn).y;
                 k= inputcode->at(nn).k;
@@ -115,10 +115,10 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
                     }
                 }
                 Dmean = Dmean/(Rb*Rb);
-                permutation(&D[0][0],&PD[0][0],Rb,k);
+                permutation(&D[0][0],0,0,&PD[0][0],Rb,k);
                 for(ii=0;ii<Rb;ii++){
                     for(jj=0;jj<Rb;jj++){
-                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u;
+                        tmpoutput[i+ii][j+jj] = s * (PD[ii][jj]-Dmean) + u; 
                     }
                 }
                 nn++;
@@ -127,7 +127,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
         //Copy to the decode image
         for(i=0;i<N;i++){
             for(j=0;j<N;j++){
-                tmpoutput[i][j]=(tmpoutput[i][j] > 255 ? 255 : tmpoutput[i][j]< 0 ? 0 : tmpoutput[i][j]); 
+                tmpoutput[i][j]=(tmpoutput[i][j]>255? 0 : tmpoutput[i][j]<0? 0 : tmpoutput[i][j]);
                 DecodeImage.at<uchar>(i,j)=tmpoutput[i][j];
             }
         }
@@ -139,7 +139,9 @@ int main(int argc, char** argv){
     short int byte2;
     int i,j;
     code c;
-    vector<code> input;
+    vector<vector<code>> input(3);
+    int rangeSize;
+    rangeSize = (N/Rb)*(N/Rb);
     //Read the code file
     fstream infile;
     infile.open(argv[1],ios::in);
@@ -157,17 +159,33 @@ int main(int argc, char** argv){
             c.m = (int)(unsigned char)m;
             byte2 = (short int)(unsigned char)ns;
             c.k = (byte2>>5);
-            c.ns = (byte2&31);  
-            input.push_back(c);
+            c.ns = (byte2&31); 
+            if(input[0].size() < rangeSize){ 
+                input.at(0).push_back(c);
+            }else if(input[1].size()<rangeSize){
+                input.at(1).push_back(c);
+            }else{
+                input.at(2).push_back(c);
+            }
     }
     infile.close();
 
     //Decode the image
     Mat Dimage;
-    Dimage.create(N,N,CV_8U);
-    Decode(&input,Dimage);
+    vector<Mat> image(3);
+    image.at(0).create(N,N,CV_8U);
+    image.at(1).create(N,N,CV_8U);
+    image.at(2).create(N,N,CV_8U);
+    Decode(&input.at(0),image.at(0));
+    Decode(&input.at(1),image.at(1));
+    Decode(&input.at(2),image.at(2));
+    merge(image,Dimage);
+    //imshow("imageB",image.at(0));
+    //imshow("imageG",image.at(1));
+    //imshow("imageR",image.at(2));
     imshow("Display",Dimage);
-    imwrite("512FEImage.tiff",Dimage);
+    imwrite("512FEColorImage.tif",Dimage);
+    imwrite("512FEColorImage.jpg",Dimage);
     waitKey(0);
 }
 

@@ -16,8 +16,8 @@
 using namespace cv;
 using namespace std;
 
-//g++ DecodingColor512.cpp -o FDRGB512 `pkg-config --cflags --libs opencv`
-//./FDRGB512 ../512Outcode
+//g++ DecodingColorYUV512.cpp -o FDYUV512 `pkg-config --cflags --libs opencv`
+//./FDYUV512 ../512Outcode
 
 typedef struct code{
     int x;
@@ -82,25 +82,25 @@ void permutation(const int *h,int x,int y,int *a,int R,int k){
 
 void Decode(vector<code> *inputcode,Mat &DecodeImage){
     Mat down;
-    down.create(N2,N2,CV_8U);
     int i,j,ii,jj,nn;
     int x,y,k,u,Dmean;
     float s;
     int D[Rb][Rb],PD[Rb][Rb];
     int tmpoutput[N][N];
-    for(i=0;i<N;i++){
-        for(j=0;j<N;j++){
+    for(i=0;i<DecodeImage.rows;i++){
+        for(j=0;j<DecodeImage.cols;j++){
             DecodeImage.at<uchar>(i,j) = 30;
         }
     }
     
     for(int n=0;n < nRun;n++){
         //Downsample the image
-        resize(DecodeImage,down,Size(DecodeImage.cols/2,DecodeImage.rows/2),0,0,INTER_LINEAR);
+        resize(DecodeImage,down,Size(DecodeImage.rows/2,DecodeImage.cols/2),0,0,INTER_LINEAR);
         //For each block decode
         nn=0;
-        for(i=0;i<N;i+=Rb){
-            for(j=0;j<N;j+=Rb){
+        for(i=0;i<DecodeImage.rows;i+=Rb){
+            for(j=0;j<DecodeImage.cols;j+=Rb){
+                Dmean = 0;
                 x= inputcode->at(nn).x;
                 y= inputcode->at(nn).y;
                 k= inputcode->at(nn).k;
@@ -124,8 +124,8 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
             }   
         }
         //Copy to the decode image
-        for(i=0;i<N;i++){
-            for(j=0;j<N;j++){
+        for(i=0;i<DecodeImage.rows;i++){
+            for(j=0;j<DecodeImage.cols;j++){
                 tmpoutput[i][j]=(tmpoutput[i][j]>255? 0 : tmpoutput[i][j]<0? 0 : tmpoutput[i][j]);
                 DecodeImage.at<uchar>(i,j)=tmpoutput[i][j];
             }
@@ -161,29 +161,45 @@ int main(int argc, char** argv){
             c.ns = (byte2&31); 
             if(input[0].size() < rangeSize){ 
                 input.at(0).push_back(c);
-            }else if(input[1].size()<rangeSize){
+            }else if(input[1].size()< rangeSize/4){
                 input.at(1).push_back(c);
             }else{
                 input.at(2).push_back(c);
             }
     }
     infile.close();
-
+    cout << input.at(2).size();
     //Decode the image
-    Mat Dimage;
+    Mat Dimage,tmpImage;
     vector<Mat> image(3);
     image.at(0).create(N,N,CV_8U);
     image.at(1).create(N,N,CV_8U);
     image.at(2).create(N,N,CV_8U);
+    tmpImage.create(N2,N2,CV_8U);
+    
     Decode(&input.at(0),image.at(0));
-    Decode(&input.at(1),image.at(1));
-    Decode(&input.at(2),image.at(2));
+    Decode(&input.at(1),tmpImage);
+    for(i=0;i<N;i++){ 
+        for(j=0;j<N;j++){
+            image.at(1).at<uchar>(i,j) = tmpImage.at<uchar>(i/2,j/2);
+        }
+    }
+    Decode(&input.at(2),tmpImage);
+    for(i=0;i<N;i++){
+        for(j=0;j<N;j++){
+            image.at(2).at<uchar>(i,j) = tmpImage.at<uchar>(i/2,j/2);
+        }
+    }
     merge(image,Dimage);
-    imshow("imageB",image.at(0));
-    imshow("imageG",image.at(1));
-    imshow("imageR",image.at(2));
+    //imshow("imageY",image.at(0));
+    //imshow("imageU",image.at(1));
+    //imshow("imageV",image.at(2));
+    cvtColor(Dimage,Dimage,CV_YCrCb2BGR);
     imshow("Display",Dimage);
-    imwrite("OutputColorImage.tif",Dimage);
+    imwrite("512FEColorImage.tif",Dimage);
+    imwrite("512FEColorImage.jpg",Dimage);
     waitKey(0);
+    
+   return 0;
 }
 

@@ -11,14 +11,14 @@
 #define  N2     256
 #define  Db      16
 #define  Rb       8
-#define  Dnum   248  //N2-Rb
+#define  Dnum   249  //N2-Rb
 
 using namespace cv;
 using namespace std;
 
 //Run on terminal:
-//    nvcc FE512RGBClassify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
-//    nvprof ./FE512 ../Dataset/LennaGray512.tif
+//    nvcc FE512YUVClassify.cu -o FE512 `pkg-config --cflags --libs opencv` --expt-relaxed-constexpr
+//    nvprof ./FE512 ../Dataset/Image512/
 
 Mat readRawfile(const char* filename,int width,int height){
     Mat outputimage;
@@ -345,8 +345,8 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
     }
     __syncthreads();
 
-    while(offset < Dnum){
-        if((y & mask) == 0 && (y+offset) < Dnum){
+    while(offset < blockDim.x){
+        if((y & mask) == 0 && (y+offset) < blockDim.x){
             if(tmpOutput[4][y+offset] < tmpOutput[4][y]){
                 tmpOutput[0][y] = tmpOutput[0][y+offset];
                 tmpOutput[1][y] = tmpOutput[1][y+offset];
@@ -377,7 +377,7 @@ int main(int argc, char** argv){
     clock_t start, end, totaltime;
     size_t free_mem,total_mem;
         
-    Mat image,downimage;
+    Mat oimage,image,downimage,tmpimage;
     vector<Mat> rgbchannels(3);
     float *output; 
     cuda::GpuMat Gpuimage,Gpudownimage;
@@ -385,7 +385,8 @@ int main(int argc, char** argv){
     float *GpuOutput;
     cudaMalloc((void**)&GpuOutput,sizeof(float)*5*Dnum);
     output = (float*)malloc(sizeof(float)*5*Dnum);
-    image = imread(argv[1],1);
+    oimage = imread(argv[1],1);
+    cvtColor(oimage,image,CV_BGR2YCrCb);
     split(image,rgbchannels);
     //Open the file for store encoding data
     fstream outfile;
@@ -401,24 +402,37 @@ int main(int argc, char** argv){
     int i,j,ll;
     int x,y,k,m,s;
     int RGB;
+    int BlockNum,ThreadNum,ImageSize;
     float Emin;
     Emin=6553600;
     
-    
-
     for(RGB=0;RGB<3;RGB++){
         resize(rgbchannels[RGB],downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
-        Gpuimage.upload(rgbchannels[RGB]);
-        Gpudownimage.upload(downimage);
+        resize(downimage,tmpimage,Size(downimage.cols/2,downimage.rows/2),0,0,INTER_LINEAR);
+        if(RGB==0){
+            Gpuimage.upload(rgbchannels[RGB]);
+            Gpudownimage.upload(downimage);
+            BlockNum = Dnum;
+            ThreadNum = Dnum;
+            ImageSize = N;
+
+        }else{
+            Gpuimage.upload(downimage);
+            Gpudownimage.upload(tmpimage);
+            BlockNum = 121;
+            ThreadNum = 121;
+            ImageSize = N/2;
+        }
+
+        
         //Classify the domain block into 3 class
-        DomainBlockClassify<<<Dnum,Dnum>>>(Gpudownimage,Gpuclass);
-         
+        DomainBlockClassify<<<BlockNum,ThreadNum>>>(Gpudownimage,Gpuclass);
         //For each Range, calculate s,m value    
-        for(i=0;i<N;i+=Rb){
-            for(j=0;j<N;j+=Rb){
-                RangeParallel<<<Dnum,Dnum>>>(Gpuimage,Gpudownimage,Gpuclass,GpuOutput,i,j);
-                cudaMemcpy2D(output,sizeof(float)*5,GpuOutput,sizeof(float)*5,sizeof(float)*5,Dnum,cudaMemcpyDeviceToHost); 
-                for(ll=0;ll<Dnum;ll++){
+        for(i=0;i<ImageSize;i+=Rb){
+            for(j=0;j<ImageSize;j+=Rb){
+                RangeParallel<<<BlockNum,ThreadNum>>>(Gpuimage,Gpudownimage,Gpuclass,GpuOutput,i,j);
+                cudaMemcpy2D(output,sizeof(float)*5,GpuOutput,sizeof(float)*5,sizeof(float)*5,BlockNum,cudaMemcpyDeviceToHost); 
+                for(ll=0;ll<BlockNum;ll++){
                     if(output[ll*5+4] <= Emin){
                         Emin = output[ll*5+4];
                         x = ll;
@@ -429,7 +443,7 @@ int main(int argc, char** argv){
                     }
                 }
                 Emin = 6553600;
-                outfile << (char)x << (char)y << (char)m << (char)((k<<5)+s);  
+                outfile << (char)x << (char)y << (char)m << (char)((k<<5)+s); 
             }
         }
     }

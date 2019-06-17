@@ -389,7 +389,15 @@ int main(int argc, char** argv){
     float *GpuOutput;
     cudaMalloc((void**)&GpuOutput,sizeof(float)*5*Dnum);
     output = (float*)malloc(sizeof(float)*5*Dnum);
-    image = imread(argv[1],0);
+    
+    Mat Cimage,YUVimage;
+    vector<Mat> YUVsplit(3);
+    Cimage = imread(argv[1],1);
+    cvtColor(Cimage, YUVimage, CV_BGR2YUV);
+    split(YUVimage,YUVsplit);
+    image = YUVsplit[0];
+    imshow("YUV",image);
+    waitKey(0);
     resize(image,downimage,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     //Open the file for store encoding data
     fstream outfile;
