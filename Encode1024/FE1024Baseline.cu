@@ -12,7 +12,7 @@
 #define  Db       16
 #define  Rb        8
 #define  Dnum    504  //N2-Rb
-#define  ME    65536
+#define  ME  6553600
 
 
 using namespace cv;
@@ -140,7 +140,7 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
     const int y = threadIdx.x;
     minerr= ME;
     //Set shared mem
-    if(y<Dnum){
+    if(y<blockDim.x){
         for(i=0;i<Rb;i++){
             tmpDown[i][y] = Downsample(x+i,y);
         }
@@ -153,7 +153,7 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
     }
     __syncthreads();
     
-    if(x<Dnum && y<Dnum){
+    if(x<blockDim.x && y<blockDim.x){
         Ud=0;
         m=0;
         for(i=0;i < RangeSize;i++){
@@ -177,8 +177,8 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
                 }
             }
             s=(fabs(sdown)<0.01? 0.0 : sup/sdown);
-            ks=(s<-1? 0: s>=2.1? 31:(short int)(10.5+s*10));
-            s=0.1*ks-1;
+            ks=(s<-5? 0: s>=5? 31:(short int)(15.5+s*3.1));
+            s=0.32*ks-5;
             err=0.005;
             for(i=0;i<RangeSize;i++){
                 for(j=0;j<RangeSize;j++){
@@ -204,8 +204,8 @@ __global__ static void CalSM(cuda::PtrStep<uchar> Original, cuda::PtrStep<uchar>
         tmpOutput[4][y]=y;
         __syncthreads();
 
-        while(offset < Dnum){
-            if((y & mask) == 0 && (y+offset) < Dnum){
+        while(offset < blockDim.x){
+            if((y & mask) == 0 && (y+offset) < blockDim.x){
                 if(tmpOutput[3][y+offset] < tmpOutput[3][y]){
                     tmpOutput[0][y] = tmpOutput[0][y+offset];
                     tmpOutput[1][y] = tmpOutput[1][y+offset];
@@ -242,11 +242,8 @@ int main(int argc, char** argv){
     float Emin;
     Emin= ME;
     int x,y,tau,ns,u;
-
     //Input image and DownSampling the inputdata
     image = imread(argv[1],0);
-    //image.create(N,N,CV_8U);
-    //image = readRawfile(argv[1],N,N);
     downsample.create(N2,N2,CV_8U);
     resize(image,downsample,Size(image.cols/2,image.rows/2),0,0,INTER_LINEAR);
     start = clock();
@@ -280,7 +277,7 @@ int main(int argc, char** argv){
             }
             //cout << Emin << endl;
             Emin = ME;
-            outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);        
+            outfile << (char)x << (char)y << (char)u << (char)((tau<<5)+ns);       
         }
     }
     outfile.close();

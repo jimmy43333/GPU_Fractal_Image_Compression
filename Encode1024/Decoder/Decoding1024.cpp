@@ -9,7 +9,7 @@
 #define  N2   512
 #define  Db    16
 #define  Rb     8
-#define  nRun  20
+#define  nRun   3
 
 
 using namespace cv;
@@ -90,7 +90,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
 
     for(i=0;i<N;i++){
         for(j=0;j<N;j++){
-            DecodeImage.at<uchar>(i,j) = 50;
+            DecodeImage.at<uchar>(i,j) = 10;
         }
     }
     
@@ -106,7 +106,7 @@ void Decode(vector<code> *inputcode,Mat &DecodeImage){
                 y= inputcode->at(nn).y;
                 k= inputcode->at(nn).k;
                 u= inputcode->at(nn).m;
-                s= 0.10*(inputcode->at(nn).ns)-1.0; 
+                s= 0.32*(inputcode->at(nn).ns)-5.0; 
                 for(ii=0;ii<Rb;ii++){
                     for(jj=0;jj<Rb;jj++){
                         D[ii][jj] = down.at<uchar>(x+ii,y+jj);
@@ -160,13 +160,13 @@ int main(int argc, char** argv){
             input.push_back(c);
     }
     infile.close();
-
+    cout << input.size();
     //Decode the image
     Mat Dimage;
     Dimage.create(N,N,CV_8U);
     Decode(&input,Dimage);
     imshow("Display",Dimage);
-    imwrite("512FEImage.tiff",Dimage);
+    imwrite("1024FEImage.tiff",Dimage);
     waitKey(0);
 }
 

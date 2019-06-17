@@ -10,8 +10,8 @@
 #define  N     1024
 #define  N2     512
 #define  Db      16
-#define  Rb       4
-#define  Dnum   504  //N2-Rb
+#define  Rb       8
+#define  Dnum   505  //N2-Rb
 
 using namespace cv;
 using namespace std;
@@ -340,12 +340,12 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
         calSM(&perR[0][0],&perD[0][0],ds,dm,derr);
         tmpOutput[0][y] = y;
         tmpOutput[1][y] = calK(Rk,Dk);
-        tmpOutput[2][y] = *ds;
-        tmpOutput[3][y] = *dm;
-        tmpOutput[4][y] = *derr;
+        //tmpOutput[2][y] = *ds;
+        //tmpOutput[3][y] = *dm;
+        //tmpOutput[4][y] = *derr;
     }
     __syncthreads();
-
+    /*
     while(offset < Dnum){
         if((y & mask) == 0 && (y+offset) < Dnum){
             if(tmpOutput[4][y+offset] < tmpOutput[4][y]){
@@ -369,6 +369,7 @@ __global__ static void RangeParallel(cuda::PtrStep<uchar> image,cuda::PtrStep<uc
         Output[x*5+3]= tmpOutput[3][y];
         Output[x*5+4]= tmpOutput[4][y];
     }
+    */
 } 
 
 
